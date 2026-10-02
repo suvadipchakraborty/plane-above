@@ -53,6 +53,61 @@
   let approx = false;
   const note = () => (approx ? `<p class="note">Approximate location from your network. Distances may be off by several miles. Allow device location for an exact scan.</p>` : "");
 
+  // ---- Traffic sources: OpenSky first, adsb.lol as automatic fallback ----
+  const timeout = (ms) => AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined;
+
+  async function fromOpenSky(lat, lon) {
+    const dLat = 1, dLon = 1 / Math.max(Math.cos(toRad(lat)), 0.05);
+    const url = `https://opensky-network.org/api/states/all?lamin=${lat - dLat}&lomin=${lon - dLon}&lamax=${lat + dLat}&lomax=${lon + dLon}`;
+    const res = await fetch(url, { signal: timeout(7000) });
+    if (!res.ok) throw new Error("api");
+    const data = await res.json();
+    return (data.states || [])
+      .filter((s) => !s[8] && s[5] != null && s[6] != null && (s[7] ?? s[13]) != null)
+      .map((s) => ({ callsign: (s[1] || "").trim() || s[0].toUpperCase(), country: s[2], alt: s[7] ?? s[13], speed: s[9], lat: s[6], lon: s[5] }));
+  }
+
+  async function fromAdsbLol(lat, lon) {
+    const res = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`, { signal: timeout(10000) });
+    if (res.status === 429) throw new Error("rate");
+    if (!res.ok) throw new Error("api");
+    const data = await res.json();
+    return (data.ac || [])
+      .filter((a) => typeof a.alt_baro === "number" && a.lat != null && a.lon != null)
+      .map((a) => ({
+        callsign: (a.flight || "").trim() || (a.r || a.hex || "").toUpperCase(),
+        country: countryFromHex(a.hex), type: a.t || "",
+        alt: a.alt_baro * 0.3048, speed: (a.gs ?? 0) * 0.514444, lat: a.lat, lon: a.lon,
+      }));
+  }
+
+  async function getTraffic(lat, lon) {
+    try { return await fromOpenSky(lat, lon); }
+    catch (_) { status.textContent = "Switching radar feed…"; return await fromAdsbLol(lat, lon); }
+  }
+
+  // Country of registration from the ICAO 24-bit address block
+  const ICAO = [
+    [0xA00000,0xAFFFFF,"United States"],[0xC00000,0xC3FFFF,"Canada"],[0x400000,0x43FFFF,"United Kingdom"],
+    [0x3C0000,0x3FFFFF,"Germany"],[0x380000,0x3BFFFF,"France"],[0x300000,0x33FFFF,"Italy"],[0x340000,0x37FFFF,"Spain"],
+    [0x480000,0x487FFF,"Netherlands"],[0x488000,0x48FFFF,"Poland"],[0x448000,0x44FFFF,"Belgium"],[0x440000,0x447FFF,"Austria"],
+    [0x4B0000,0x4B7FFF,"Switzerland"],[0x4B8000,0x4BFFFF,"Turkey"],[0x4A0000,0x4A7FFF,"Sweden"],[0x478000,0x47FFFF,"Norway"],
+    [0x458000,0x45FFFF,"Denmark"],[0x460000,0x467FFF,"Finland"],[0x468000,0x46FFFF,"Greece"],[0x490000,0x497FFF,"Portugal"],
+    [0x4CA000,0x4CAFFF,"Ireland"],[0x100000,0x1FFFFF,"Russia"],[0x800000,0x83FFFF,"India"],[0x788000,0x78FFFF,"Hong Kong"],
+    [0x780000,0x7BFFFF,"China"],[0x840000,0x87FFFF,"Japan"],[0x718000,0x71FFFF,"South Korea"],[0x7C0000,0x7FFFFF,"Australia"],
+    [0xC80000,0xC87FFF,"New Zealand"],[0xE00000,0xE3FFFF,"Brazil"],[0xE40000,0xE7FFFF,"Argentina"],[0x0D0000,0x0D7FFF,"Mexico"],
+    [0x896000,0x896FFF,"United Arab Emirates"],[0x06A000,0x06AFFF,"Qatar"],[0x710000,0x717FFF,"Saudi Arabia"],
+    [0x768000,0x76FFFF,"Singapore"],[0x750000,0x757FFF,"Malaysia"],[0x758000,0x75FFFF,"Philippines"],[0x880000,0x887FFF,"Thailand"],
+    [0x888000,0x88FFFF,"Vietnam"],[0x8A0000,0x8A7FFF,"Indonesia"],[0x760000,0x767FFF,"Pakistan"],[0x770000,0x777FFF,"Sri Lanka"],
+    [0x738000,0x73FFFF,"Israel"],[0x730000,0x737FFF,"Iran"],[0x010000,0x017FFF,"Egypt"],[0x008000,0x00FFFF,"South Africa"],
+    [0x040000,0x047FFF,"Ethiopia"],
+  ];
+  const countryFromHex = (hex) => {
+    const n = parseInt(hex, 16);
+    const m = ICAO.find(([lo, hi]) => n >= lo && n <= hi);
+    return m ? m[2] : "Unknown";
+  };
+
   async function scan() {
     btn.disabled = true; card.hidden = true; blip.hidden = true;
     radar.classList.add("scanning");
@@ -62,23 +117,8 @@
       const pos = await getPosition();
       const { latitude: lat, longitude: lon } = pos; approx = pos.approx;
       status.textContent = "Sweeping airspace…";
-      const dLat = 1, dLon = 1 / Math.max(Math.cos(toRad(lat)), 0.05);
-      const url = `https://opensky-network.org/api/states/all?lamin=${lat - dLat}&lomin=${lon - dLon}&lamax=${lat + dLat}&lomax=${lon + dLon}`;
-      const res = await fetch(url);
-      if (res.status === 429) throw new Error("rate");
-      if (!res.ok) throw new Error("api");
-      const data = await res.json();
-
-      const flying = (data.states || [])
-        .filter((s) => !s[8] && s[5] != null && s[6] != null && (s[7] ?? s[13]) != null)
-        .map((s) => ({
-          callsign: (s[1] || "").trim() || s[0].toUpperCase(),
-          country: s[2],
-          alt: s[7] ?? s[13],
-          speed: s[9],
-          dist: haversine(lat, lon, s[6], s[5]),
-          brg: bearing(lat, lon, s[6], s[5]),
-        }))
+      const flying = (await getTraffic(lat, lon))
+        .map((p) => ({ ...p, dist: haversine(lat, lon, p.lat, p.lon), brg: bearing(lat, lon, p.lat, p.lon) }))
         .sort((a, b) => a.dist - b.dist);
 
       if (!flying.length) { last = null; showEmpty(); return; }
@@ -103,6 +143,7 @@
       <dl class="grid">
         <div><dt>Callsign</dt><dd>${esc(p.callsign)}</dd></div>
         <div><dt>Origin</dt><dd>${esc(p.country)}</dd></div>
+        ${p.type ? `<div><dt>Aircraft</dt><dd>${esc(p.type)}</dd></div>` : ""}
         <div><dt>Altitude</dt><dd>${fmt(ft)} ft</dd></div>
         <div><dt>Speed</dt><dd>${fmt(mph)} mph · ${fmt(kt)} kt</dd></div>
       </dl>${note()}`;
@@ -134,7 +175,7 @@
   // Share
   $("shareBtn").addEventListener("click", async () => {
     if (!last) return;
-    const text = `There's a flight from ${last.country} (${last.callsign}) at ${fmt(last.alt * 3.28084)} ft, just ${last.dist.toFixed(1)} miles from me right now! ✈️`;
+    const text = `There's a ${last.type ? last.type + " " : ""}flight from ${last.country} (${last.callsign}) at ${fmt(last.alt * 3.28084)} ft, just ${last.dist.toFixed(1)} miles from me right now! ✈️`;
     try { await navigator.share({ title: "Plane Above Me", text, url: "https://plane-above.suvadipchakraborty.workers.dev/" }); } catch (e) {}
   });
 
