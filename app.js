@@ -28,8 +28,30 @@
     } catch (e) {}
   }
 
-  const getPosition = () => new Promise((res, rej) =>
-    navigator.geolocation ? navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }) : rej(new Error("unsupported")));
+  const geo = (opts) => new Promise((res, rej) =>
+    navigator.geolocation ? navigator.geolocation.getCurrentPosition(res, rej, opts) : rej({ code: 0 }));
+  const pick = (p) => ({ latitude: p.coords.latitude, longitude: p.coords.longitude, approx: false });
+
+  // 1) fast network/Wi-Fi fix  2) high-accuracy GPS  3) approximate IP location (last resort)
+  async function getPosition() {
+    try { return pick(await geo({ enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 })); }
+    catch (e) {
+      if (e.code === 1) throw e; // user blocked location: respect it
+      status.textContent = "Trying GPS…";
+      try { return pick(await geo({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })); }
+      catch (e2) {
+        if (e2.code === 1) throw e2;
+        status.textContent = "Using approximate location…";
+        try {
+          const j = await (await fetch("https://ipwho.is/")).json();
+          if (j.success && j.latitude != null) return { latitude: j.latitude, longitude: j.longitude, approx: true };
+        } catch (_) {}
+        throw e2;
+      }
+    }
+  }
+  let approx = false;
+  const note = () => (approx ? `<p class="note">Approximate location from your network. Distances may be off by several miles. Allow device location for an exact scan.</p>` : "");
 
   async function scan() {
     btn.disabled = true; card.hidden = true; blip.hidden = true;
@@ -37,8 +59,8 @@
     status.textContent = "Acquiring GPS fix…";
     try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
     try {
-      const { coords } = await getPosition();
-      const { latitude: lat, longitude: lon } = coords;
+      const pos = await getPosition();
+      const { latitude: lat, longitude: lon } = pos; approx = pos.approx;
       status.textContent = "Sweeping airspace…";
       const dLat = 1, dLon = 1 / Math.max(Math.cos(toRad(lat)), 0.05);
       const url = `https://opensky-network.org/api/states/all?lamin=${lat - dLat}&lomin=${lon - dLon}&lamax=${lat + dLat}&lomax=${lon + dLon}`;
@@ -83,7 +105,7 @@
         <div><dt>Origin</dt><dd>${esc(p.country)}</dd></div>
         <div><dt>Altitude</dt><dd>${fmt(ft)} ft</dd></div>
         <div><dt>Speed</dt><dd>${fmt(mph)} mph · ${fmt(kt)} kt</dd></div>
-      </dl>`;
+      </dl>${note()}`;
     card.hidden = false;
     if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
     ping();
@@ -91,13 +113,15 @@
   }
   function showEmpty() {
     status.textContent = "No contacts";
-    card.innerHTML = `<p class="empty">Airspace clear. No flights detected in your immediate vicinity.</p>`;
+    card.innerHTML = `<p class="empty">Airspace clear. No flights detected in your immediate vicinity.</p>${note()}`;
     card.hidden = false; $("shareBtn").hidden = true;
   }
   function showError(e) {
-    const msg = e.code === 1 ? "Location access denied. Allow location for this site, then scan again."
+    const msg = e.code === 1 ? "Location is blocked for this site. Open your browser menu → Site settings → Location → Allow, then scan again."
+      : e.code === 2 ? "Your phone couldn't work out its location. Turn on Location in your phone settings, then scan again."
+      : e.code === 3 ? "Location timed out. Move near a window or open sky, then scan again."
       : e.message === "rate" ? "OpenSky rate limit reached. Wait a minute and try again."
-      : e.code ? "Couldn't get your GPS position. Check signal and try again."
+      : e.code === 0 ? "This browser doesn't support location. Try opening the app in Chrome or Safari."
       : "Couldn't reach the OpenSky radar feed. Check your connection and try again.";
     status.textContent = "Scan failed";
     card.innerHTML = `<p class="empty">${msg}</p>`; card.hidden = false; $("shareBtn").hidden = true;

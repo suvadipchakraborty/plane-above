@@ -35,3 +35,4 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--b);outline-offset:3
 footer{text-align:center;font-size:.75rem;color:#5fae92;padding:14px}
 footer a{color:var(--b)}
 @media (prefers-reduced-motion:reduce){*{animation-duration:0s!important;animation-iteration-count:1!important}}
+.note{margin-top:14px;font-size:.7rem;color:#5fae92;line-height:1.4}
