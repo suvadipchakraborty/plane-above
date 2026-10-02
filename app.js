@@ -67,8 +67,9 @@
       .map((s) => ({ callsign: (s[1] || "").trim() || s[0].toUpperCase(), country: s[2], alt: s[7] ?? s[13], speed: s[9], lat: s[6], lon: s[5] }));
   }
 
-  async function fromAdsbLol(lat, lon) {
-    const res = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`, { signal: timeout(10000) });
+  async function fromAdsbLol(lat, lon, viaProxy) {
+    const url = viaProxy ? `/api/adsb?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}` : `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+    const res = await fetch(url, { signal: timeout(10000) });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     return (data.ac || [])
@@ -81,12 +82,14 @@
   }
 
   const why = (e) => (e && e.name === "TimeoutError" ? "timed out" : e && /^HTTP/.test(e.message) ? e.message : "blocked or unreachable");
+  // Order: own server proxy (no CORS/network blocking) -> adsb.lol direct -> OpenSky direct
   async function getTraffic(lat, lon) {
-    let w1;
-    try { return await fromOpenSky(lat, lon); } catch (e) { w1 = why(e); }
-    status.textContent = "Switching radar feed…";
-    try { return await fromAdsbLol(lat, lon); }
-    catch (e) { const err = new Error("feeds"); err.detail = `OpenSky: ${w1}. adsb.lol: ${why(e)}.`; throw err; }
+    const fails = [];
+    const steps = [["proxy", () => fromAdsbLol(lat, lon, true)], ["adsb.lol", () => fromAdsbLol(lat, lon)], ["OpenSky", () => fromOpenSky(lat, lon)]];
+    for (const [name, fn] of steps) {
+      try { return await fn(); } catch (e) { fails.push(`${name}: ${why(e)}`); status.textContent = "Switching radar feed…"; }
+    }
+    const err = new Error("feeds"); err.detail = fails.join(". ") + "."; throw err;
   }
 
   // Country of registration from the ICAO 24-bit address block
@@ -166,7 +169,7 @@
       : e.code === 3 ? "Location timed out. Move near a window or open sky, then scan again."
       : e.message === "rate" ? "OpenSky rate limit reached. Wait a minute and try again."
       : e.code === 0 ? "This browser doesn't support location. Try opening the app in Chrome or Safari."
-      : `Couldn't reach the radar feeds. Turn off any VPN or ad blocker and try again.${e.detail ? `<br><small>${e.detail}</small>` : ""}`;
+      : `Couldn't reach the radar feeds. Check your connection, turn off any VPN or ad blocker, and try again.${e.detail ? `<br><small>${e.detail}</small>` : ""}`;
     status.textContent = "Scan failed";
     card.innerHTML = `<p class="empty">${msg}</p>`; card.hidden = false; $("shareBtn").hidden = true;
   }
