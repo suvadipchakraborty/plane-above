@@ -67,10 +67,12 @@
       .map((s) => ({ callsign: (s[1] || "").trim() || s[0].toUpperCase(), country: s[2], alt: s[7] ?? s[13], speed: s[9], lat: s[6], lon: s[5] }));
   }
 
-  async function fromAdsbLol(lat, lon, viaProxy) {
-    const url = viaProxy ? `/api/adsb?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}` : `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`;
+  async function fromAdsbLol(url) {
     const res = await fetch(url, { signal: timeout(10000) });
-    if (!res.ok) throw new Error("HTTP " + res.status);
+    if (!res.ok) {
+      let t = ""; try { t = (await res.text()).slice(0, 140); } catch (_) {}
+      throw new Error("HTTP " + res.status + (t ? ` (${t})` : ""));
+    }
     const data = await res.json();
     return (data.ac || [])
       .filter((a) => typeof a.alt_baro === "number" && a.lat != null && a.lon != null)
@@ -82,10 +84,16 @@
   }
 
   const why = (e) => (e && e.name === "TimeoutError" ? "timed out" : e && /^HTTP/.test(e.message) ? e.message : "blocked or unreachable");
-  // Order: own server proxy (no CORS/network blocking) -> adsb.lol direct -> OpenSky direct
+  // Order: own server proxy -> airplanes.live -> adsb.lol -> OpenSky
   async function getTraffic(lat, lon) {
     const fails = [];
-    const steps = [["proxy", () => fromAdsbLol(lat, lon, true)], ["adsb.lol", () => fromAdsbLol(lat, lon)], ["OpenSky", () => fromOpenSky(lat, lon)]];
+    const la = lat.toFixed(3), lo = lon.toFixed(3);
+    const steps = [
+      ["proxy", () => fromAdsbLol(`/api/adsb?lat=${la}&lon=${lo}`)],
+      ["airplanes.live", () => fromAdsbLol(`https://api.airplanes.live/v2/point/${la}/${lo}/50`)],
+      ["adsb.lol", () => fromAdsbLol(`https://api.adsb.lol/v2/point/${la}/${lo}/50`)],
+      ["OpenSky", () => fromOpenSky(lat, lon)],
+    ];
     for (const [name, fn] of steps) {
       try { return await fn(); } catch (e) { fails.push(`${name}: ${why(e)}`); status.textContent = "Switching radar feed…"; }
     }
