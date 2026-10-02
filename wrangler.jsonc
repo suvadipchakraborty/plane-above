@@ -1,9 +1,0 @@
-{
-  "name": "plane-above",
-  "main": "worker.js",
-  "compatibility_date": "2025-09-01",
-  // Run the Worker in/near Frankfurt. From an Indian Cloudflare data centre the shared outbound IPs
-  // are being rejected by the feeds (403/429/timeouts); the feeds themselves are hosted in Europe.
-  "placement": { "region": "aws:eu-central-1" },
-  "assets": { "directory": ".", "binding": "ASSETS", "run_worker_first": ["/api/*"] }
-}
