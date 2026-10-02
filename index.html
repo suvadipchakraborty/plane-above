@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flightdle - The Daily Aviation Puzzle</title>
+<meta name="theme-color" content="#0a1020"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="styles.css"></head>
+<body><main>
+<header><h1>Flightdle</h1><p>The Daily Aviation Puzzle</p><button id="install" type="button">Save App</button></header>
+<section class="pass" aria-label="Clues">
+ <div class="clue"><small>From</small><b id="c-origin">–</b></div>
+ <div class="clue"><small>Airline</small><b id="c-airline">–</b></div>
+ <div class="clue"><small>Aircraft</small><b id="c-aircraft">–</b></div>
+ <div class="clue"><small>Flight time</small><b id="c-time">–</b></div>
+ <div class="clue dest"><small>To</small><b id="c-dest">? ? ?</b></div>
+</section>
+<section>
+ <div class="guessbar"><input id="guess" list="ap" placeholder="City or IATA code" autocomplete="off" autocapitalize="characters" aria-label="Guess destination"><button id="go" type="button">Guess</button></div>
+ <datalist id="ap"></datalist><p id="msg" role="status"></p>
+ <div id="rows"></div>
+ <div id="left" aria-label="Guesses remaining"></div>
+</section>
+<button id="results" type="button" hidden>View results</button>
+</main>
+<div id="modal" class="modal" hidden><div class="card"><h2 id="m-title"></h2><p id="m-sub"></p>
+ <div class="stats"><div><b id="s-played">0</b><small>Played</small></div><div><b id="s-wins">0</b><small>Wins</small></div><div><b id="s-streak">0</b><small>Streak</small></div></div>
+ <pre id="m-grid"></pre><button id="share" type="button">Share</button><button id="close" type="button" class="ghost">Close</button></div></div>
+<footer>Built by Suva · <a href="mailto:suvadipchakraborty@gmail.com?subject=Flightdle%20feedback">Send feedback</a></footer>
+<script src="app.js" type="module"></script></body></html>
