@@ -18,11 +18,11 @@ async function openskyToken(env) {
 }
 
 async function fromOpenSky(env, lat, lon) {
-  let token;
-  try { token = await openskyToken(env); } catch (e) { throw new Error(e.name === "TimeoutError" ? "token timeout" : e.message); }
+  let token = null;
+  if (env) { try { token = await openskyToken(env); } catch (e) { throw new Error(e.name === "TimeoutError" ? "token timeout" : e.message); } }
   const dLat = 1, dLon = 1 / Math.max(Math.cos((lat * Math.PI) / 180), 0.05);
   const u = `https://opensky-network.org/api/states/all?lamin=${lat - dLat}&lomin=${lon - dLon}&lamax=${lat + dLat}&lomax=${lon + dLon}`;
-  const r = await fetch(u, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) });
+  const r = await fetch(u, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(8000) });
   if (!r.ok) throw new Error("states HTTP " + r.status);
   const j = await r.json();
   return {
@@ -62,7 +62,14 @@ async function fromAdsbFi(lat, lon) {
 }
 
 async function fromAdsbLol(lat, lon) {
-  const j = await getJson(`https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/50`, { "User-Agent": "plane-above-me" }, 6000, "adsb.lol");
+  const url = `https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/50`;
+  let j;
+  try { j = await getJson(url, { "User-Agent": "plane-above-me" }, 5000, "adsb.lol"); }
+  catch (e) {
+    if (!/429/.test(e.message)) throw e;
+    await new Promise((r) => setTimeout(r, 1500)); // rate-limited: wait once, then retry
+    j = await getJson(url, { "User-Agent": "plane-above-me" }, 5000, "adsb.lol (retry)");
+  }
   if (!Array.isArray(j.ac)) throw new Error("adsb.lol bad data");
   return { ac: j.ac };
 }
@@ -85,6 +92,7 @@ export default {
     // Race every source in parallel; first one to return data wins.
     const sources = [["adsb.fi", () => fromAdsbFi(la, lo)], ["adsb.lol", () => fromAdsbLol(la, lo)]];
     if (env.OPENSKY_CLIENT_ID && env.OPENSKY_CLIENT_SECRET) sources.push(["opensky", () => fromOpenSky(env, la, lo)]);
+    sources.push(["opensky-anon", () => fromOpenSky(null, la, lo)]);
     const tried = [];
     try {
       const { data, name } = await Promise.any(
