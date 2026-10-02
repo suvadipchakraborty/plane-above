@@ -82,17 +82,17 @@ function renderLeft() {
     if (g) s.className = g.hit ? 'win' : 'on'; $('left').append(s);
   }
 }
-function grid() {
+function grid(url = true) {
   const sq = g => g.hit ? '🟩' : g.cls === 'warm' ? '🟨' : '🟥';
   const score = st.won ? st.guesses.length : 'X';
   return `Flightdle #${puzzleNo} ✈️ ${score}/${CONFIG.MAX_GUESSES}\n` +
-    st.guesses.map(g => sq(g) + (g.hit ? '🎯' : ARROWS[g.dir])).join('\n') + `\n${CONFIG.SHARE_URL}`;
+    st.guesses.map(g => sq(g) + (g.hit ? '🎯' : ARROWS[g.dir])).join('\n') + (url ? `\n${CONFIG.SHARE_URL}` : '');
 }
 function showModal() {
   $('m-title').textContent = st.won ? 'Cleared for landing!' : 'Diverted';
   $('m-sub').textContent = `Destination: ${label(flight.d)}`;
   $('s-played').textContent = stats.played; $('s-wins').textContent = stats.wins; $('s-streak').textContent = stats.streak;
-  $('m-grid').textContent = grid(); $('modal').hidden = false;
+  $('m-grid').textContent = grid(false); $('modal').hidden = false;
 }
 function finish(animated) {
   $('c-dest').textContent = flight.d; $('guess').disabled = $('go').disabled = true; $('results').hidden = false;
@@ -152,6 +152,8 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   AIRPORTS = await (await fetch('airports.json')).json();
   $('ap').innerHTML = Object.keys(AIRPORTS).sort().map(c => `<option value="${label(c)}">`).join('');
   flight = await pickFlight();
+  const fk = flight.o + flight.d; // reset saved progress if the puzzle changed
+  if (st.f !== fk) st = { day: todayStr, guesses: [], done: false, won: false, f: fk };
   $('c-origin').textContent = label(flight.o); $('c-airline').textContent = flight.airline;
   $('c-aircraft').textContent = flight.aircraft;
   $('c-time').textContent = '~' + fmtTime(flight.mins);
