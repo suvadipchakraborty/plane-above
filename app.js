@@ -70,7 +70,7 @@
   async function fromAdsbLol(url) {
     const res = await fetch(url, { signal: timeout(10000) });
     if (!res.ok) {
-      let t = ""; try { t = (await res.text()).slice(0, 140); } catch (_) {}
+      let t = ""; try { t = (await res.text()).slice(0, 500); } catch (_) {}
       throw new Error("HTTP " + res.status + (t ? ` (${t})` : ""));
     }
     const data = await res.json();
@@ -91,8 +91,6 @@
     const steps = [
       ["proxy", () => fromAdsbLol(`/api/adsb?lat=${la}&lon=${lo}`)],
       ["adsb.lol", () => fromAdsbLol(`https://api.adsb.lol/v2/point/${la}/${lo}/50`)],
-      ["airplanes.live", () => fromAdsbLol(`https://api.airplanes.live/v2/point/${la}/${lo}/50`)],
-      ["adsb.fi", () => fromAdsbLol(`https://opendata.adsb.fi/api/v2/lat/${la}/lon/${lo}/dist/50`)],
       ["OpenSky", () => fromOpenSky(lat, lon)],
     ];
     for (const [name, fn] of steps) {

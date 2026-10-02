@@ -1,4 +1,4 @@
-const CACHE = "plane-above-v8";
+const CACHE = "plane-above-v9";
 const ASSETS = ["./", "index.html", "styles.css", "app.js", "manifest.json", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => {

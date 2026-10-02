@@ -11,18 +11,19 @@ async function openskyToken(env) {
     body: new URLSearchParams({ grant_type: "client_credentials", client_id: env.OPENSKY_CLIENT_ID, client_secret: env.OPENSKY_CLIENT_SECRET }),
     signal: AbortSignal.timeout(6000),
   });
-  if (!r.ok) throw new Error("token " + r.status);
+  if (!r.ok) throw new Error("token HTTP " + r.status);
   const j = await r.json();
   tok = { v: j.access_token, exp: Date.now() + (j.expires_in - 60) * 1000 };
   return tok.v;
 }
 
 async function fromOpenSky(env, lat, lon) {
-  const token = await openskyToken(env);
+  let token;
+  try { token = await openskyToken(env); } catch (e) { throw new Error(e.name === "TimeoutError" ? "token timeout" : e.message); }
   const dLat = 1, dLon = 1 / Math.max(Math.cos((lat * Math.PI) / 180), 0.05);
   const u = `https://opensky-network.org/api/states/all?lamin=${lat - dLat}&lomin=${lon - dLon}&lamax=${lat + dLat}&lomax=${lon + dLon}`;
   const r = await fetch(u, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) });
-  if (!r.ok) throw new Error("opensky " + r.status);
+  if (!r.ok) throw new Error("states HTTP " + r.status);
   const j = await r.json();
   return {
     ac: (j.states || [])
@@ -31,25 +32,39 @@ async function fromOpenSky(env, lat, lon) {
   };
 }
 
-// Other free community feeds that use the same readsb JSON format as adsb.lol.
-// Cloudflare shares egress IPs, so any single feed can rate-limit (429); having several makes this reliable.
-const READSB = {
-  "adsb.lol": (la, lo) => `https://api.adsb.lol/v2/point/${la}/${lo}/50`,
-  "airplanes.live": (la, lo) => `https://api.airplanes.live/v2/point/${la}/${lo}/50`,
-  "adsb.fi": (la, lo) => `https://opendata.adsb.fi/api/v2/lat/${la}/lon/${lo}/dist/50`,
-  "adsb.one": (la, lo) => `https://api.adsb.one/v2/point/${la}/${lo}/50`,
-};
+// adsb.fi is the one community feed that serves server-side callers (airplanes.live and adsb.one
+// return 403 to everyone but feeders). It rate-limits to ~1 request/second, so variants run one after another.
+const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36";
+const ADSBFI_TRIES = [
+  (la, lo) => ["https://opendata.adsb.fi/api/v2/lat/" + la + "/lon/" + lo + "/dist/50", {}],
+  (la, lo) => ["https://opendata.adsb.fi/api/v3/lat/" + la + "/lon/" + lo + "/dist/50", {}],
+  (la, lo) => ["https://opendata.adsb.fi/api/v2/lat/" + la + "/lon/" + lo + "/dist/50", { "User-Agent": BROWSER_UA }],
+];
 
-async function fromReadsb(name, lat, lon) {
-  const r = await fetch(READSB[name](lat.toFixed(2), lon.toFixed(2)), {
-    headers: { "User-Agent": "plane-above-me", Accept: "application/json" },
-    signal: AbortSignal.timeout(6000),
-  });
-  if (!r.ok) throw new Error(name + " " + r.status);
-  const j = await r.json();
-  const ac = j.ac || j.aircraft;
-  if (!Array.isArray(ac)) throw new Error(name + " bad data");
-  return { ac };
+async function getJson(url, headers, ms, label) {
+  const r = await fetch(url, { headers: { Accept: "application/json", ...headers }, signal: AbortSignal.timeout(ms) });
+  if (!r.ok) throw new Error(label + " HTTP " + r.status);
+  return r.json();
+}
+
+async function fromAdsbFi(lat, lon) {
+  const errs = [];
+  for (const mk of ADSBFI_TRIES) {
+    const [url, headers] = mk(lat.toFixed(2), lon.toFixed(2));
+    try {
+      const j = await getJson(url, headers, 5000, "adsb.fi");
+      const ac = j.ac || j.aircraft;
+      if (Array.isArray(ac)) return { ac };
+      errs.push("bad data");
+    } catch (e) { errs.push(e.name === "TimeoutError" ? "timeout" : e.message); }
+  }
+  throw new Error(errs.join(" / "));
+}
+
+async function fromAdsbLol(lat, lon) {
+  const j = await getJson(`https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/50`, { "User-Agent": "plane-above-me" }, 6000, "adsb.lol");
+  if (!Array.isArray(j.ac)) throw new Error("adsb.lol bad data");
+  return { ac: j.ac };
 }
 
 export default {
@@ -63,22 +78,27 @@ export default {
     // Short edge cache so repeated scans don't hammer the upstream feeds (and trigger 429s)
     const cache = caches.default;
     const key = new Request(`https://cache.internal/adsb?lat=${la}&lon=${lo}`);
+    const goodKey = new Request(`https://cache.internal/adsb-last-good?lat=${la}&lon=${lo}`);
     const hit = await cache.match(key);
     if (hit) return hit;
 
     // Race every source in parallel; first one to return data wins.
-    const sources = Object.keys(READSB).map((n) => [n, () => fromReadsb(n, la, lo)]);
+    const sources = [["adsb.fi", () => fromAdsbFi(la, lo)], ["adsb.lol", () => fromAdsbLol(la, lo)]];
     if (env.OPENSKY_CLIENT_ID && env.OPENSKY_CLIENT_SECRET) sources.push(["opensky", () => fromOpenSky(env, la, lo)]);
     const tried = [];
     try {
       const { data, name } = await Promise.any(
-        sources.map(([name, fn]) => fn().then((data) => ({ data, name }), (e) => { tried.push(name + ": " + e.message); throw e; }))
+        sources.map(([name, fn]) => fn().then((data) => ({ data, name }), (e) => { tried.push(name + ": " + (e.name === "TimeoutError" ? "timeout" : e.message)); throw e; }))
       );
       const res = Response.json(data, { headers: { "cache-control": "public, max-age=8", "x-source": name } });
       ctx.waitUntil(cache.put(key, res.clone()));
+      ctx.waitUntil(cache.put(goodKey, Response.json(data, { headers: { "cache-control": "public, max-age=300" } })));
       return res;
     } catch (_) {
-      return new Response("all upstreams failed: " + tried.join(", "), { status: 502 });
+      // Every feed failed: serve the last good answer for this spot (up to 5 min old) rather than an error.
+      const stale = await cache.match(goodKey);
+      if (stale) return new Response(stale.body, { headers: { "content-type": "application/json", "cache-control": "no-store", "x-source": "stale" } });
+      return new Response("all upstreams failed: " + tried.join(" | "), { status: 502 });
     }
   },
 };
