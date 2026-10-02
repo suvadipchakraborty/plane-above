@@ -2,27 +2,60 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Flightdle - The Daily Aviation Puzzle</title>
-<meta name="theme-color" content="#0a1020"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg">
+<meta name="theme-color" content="#070d1c"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="styles.css"></head>
 <body><main>
-<header><h1>Flightdle</h1><p>The Daily Aviation Puzzle</p><button id="install" type="button">Save App</button></header>
-<section class="pass" aria-label="Clues">
- <div class="clue"><small>From</small><b id="c-origin">–</b></div>
- <div class="clue"><small>Airline</small><b id="c-airline">–</b></div>
- <div class="clue"><small>Aircraft</small><b id="c-aircraft">–</b></div>
- <div class="clue"><small>Flight time</small><b id="c-time">–</b></div>
- <div class="clue dest"><small>To</small><b id="c-dest">? ? ?</b></div>
+<header>
+ <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg><div><h1>Flightdle</h1><p>The Daily Aviation Puzzle</p></div></div>
+ <div class="tools"><button id="install" type="button" class="chip">Save App</button><button id="info" type="button" class="round" aria-label="About and how to play">i</button></div>
+</header>
+
+<section id="pass" class="pass" aria-label="Flight clues">
+ <div class="band"><span id="c-airline">–</span><span>Flightdle <span id="c-no">#–</span></span></div>
+ <div class="route">
+  <div class="end"><b id="c-o-code">---</b><span id="c-o-city">–</span></div>
+  <div class="track"><svg class="plane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg></div>
+  <div class="end r"><div id="c-dest" class="flaps" aria-label="Hidden destination"><i>?</i><i>?</i><i>?</i></div><span>Destination</span></div>
+ </div>
+ <div class="stub">
+  <div><small>Aircraft</small><b id="c-aircraft">–</b></div>
+  <div><small>Flight time</small><b id="c-time">–</b></div>
+  <div><small>Date</small><b id="c-date">–</b></div>
+ </div>
 </section>
-<section>
- <div class="guessbar"><input id="guess" list="ap" placeholder="City or IATA code" autocomplete="off" autocapitalize="characters" aria-label="Guess destination"><button id="go" type="button">Guess</button></div>
+
+<section class="play">
+ <div class="guessbar"><input id="guess" list="ap" placeholder="Where is it landing? City or IATA" autocomplete="off" autocapitalize="characters" aria-label="Guess destination"><button id="go" type="button">Guess</button></div>
  <datalist id="ap"></datalist><p id="msg" role="status"></p>
  <div id="rows"></div>
  <div id="left" aria-label="Guesses remaining"></div>
+ <button id="results" type="button" class="ghost" hidden>View results</button>
 </section>
-<button id="results" type="button" hidden>View results</button>
 </main>
+
 <div id="modal" class="modal" hidden><div class="card"><h2 id="m-title"></h2><p id="m-sub"></p>
  <div class="stats"><div><b id="s-played">0</b><small>Played</small></div><div><b id="s-wins">0</b><small>Wins</small></div><div><b id="s-streak">0</b><small>Streak</small></div></div>
- <pre id="m-grid"></pre><button id="share" type="button">Share</button><button id="close" type="button" class="ghost">Close</button></div></div>
+ <pre id="m-grid"></pre><p class="next">Next flight in <b id="m-next">--:--:--</b></p>
+ <div class="btns"><button id="share" type="button">Share</button><button id="close" type="button" class="ghost">Close</button></div></div></div>
+
+<div id="about" class="modal" hidden><div class="card left" role="dialog" aria-labelledby="a-h">
+ <h2 id="a-h">How to play</h2>
+ <p>Every day there is one flight. You see where it left from, who flies it and on what aircraft. The destination is hidden. Name the airport in <b>5 guesses</b>.</p>
+ <h3>Reading your guess</h3>
+ <div class="row sample"><div class="tile cold">XYZ<small>City</small></div><div class="tile cold">4,210 km</div><div class="tile cold">↗️</div></div>
+ <p>The distance is measured in a straight line from your guess to the real destination. The arrow shows which way to fly from your guess to reach it.</p>
+ <ul class="key"><li><i class="hit"></i>Correct airport</li><li><i class="warm"></i>Within 1,500 km</li><li><i class="cold"></i>Farther than 1,500 km</li></ul>
+ <h3>Good to know</h3>
+ <ul>
+  <li>A new flight appears at 00:00 UTC, the same for every player.</li>
+  <li>Flight time is estimated from distance. Real schedules vary.</li>
+  <li>Win in a row to build a streak. Your stats stay on this device.</li>
+  <li>Finish a puzzle to copy an emoji grid you can share.</li>
+ </ul>
+ <p class="credit">Built by Suva · <a href="mailto:suvadipchakraborty@gmail.com?subject=Flightdle%20feedback">Send feedback</a></p>
+ <button id="about-close" type="button">Start playing</button></div></div>
+
 <footer>Built by Suva · <a href="mailto:suvadipchakraborty@gmail.com?subject=Flightdle%20feedback">Send feedback</a></footer>
 <script src="app.js" type="module"></script></body></html>

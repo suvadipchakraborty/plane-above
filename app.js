@@ -69,13 +69,14 @@ if (!st || st.day !== todayStr) st = { day: todayStr, guesses: [], done: false, 
 // ---------- UI ----------
 function addRow(g, animate) {
   const row = document.createElement('div'); row.className = 'row';
-  [g.code, g.hit ? 'Correct!' : `${Math.round(g.km).toLocaleString()} km`, g.hit ? '🎯' : ARROWS[g.dir]].forEach((t, i) => {
+  [`${g.code}<small>${AIRPORTS[g.code][0]}</small>`, g.hit ? 'Arrived' : `${Math.round(g.km).toLocaleString()} km`, g.hit ? '🎯' : ARROWS[g.dir]].forEach((t, i) => {
     const d = document.createElement('div');
-    d.className = `tile ${g.cls}${animate ? ' anim' : ''}`; d.style.setProperty('--i', i); d.textContent = t; row.append(d);
+    d.className = `tile ${g.cls}${animate ? ' anim' : ''}`; d.style.setProperty('--i', i); d.innerHTML = t; row.append(d);
   });
   $('rows').append(row);
 }
 function renderLeft() {
+  $('pass').style.setProperty('--p', st.won ? 1 : Math.min(st.guesses.length / CONFIG.MAX_GUESSES, 1) * 0.8);
   $('left').innerHTML = '';
   for (let i = 0; i < CONFIG.MAX_GUESSES; i++) {
     const s = document.createElement('i'), g = st.guesses[i];
@@ -92,10 +93,19 @@ function showModal() {
   $('m-title').textContent = st.won ? 'Cleared for landing!' : 'Diverted';
   $('m-sub').textContent = `Destination: ${label(flight.d)}`;
   $('s-played').textContent = stats.played; $('s-wins').textContent = stats.wins; $('s-streak').textContent = stats.streak;
-  $('m-grid').textContent = grid(false); $('modal').hidden = false;
+  $('m-grid').textContent = grid(false); $('modal').hidden = false; tick();
+}
+function setDest(code, animate) {
+  [...$('c-dest').children].forEach((el, i) => { el.textContent = code[i]; el.style.setProperty('--i', i); el.classList.add(st.won ? 'ok' : 'miss'); if (animate) el.classList.add('anim'); });
+}
+let timer;
+function tick() {
+  const n = new Date(), s = Math.max(0, Math.floor((Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1) - n) / 1000));
+  $('m-next').textContent = [s/3600, s%3600/60, s%60].map(v => String(Math.floor(v)).padStart(2, '0')).join(':');
+  clearTimeout(timer); if (!$('modal').hidden) timer = setTimeout(tick, 1000);
 }
 function finish(animated) {
-  $('c-dest').textContent = flight.d; $('guess').disabled = $('go').disabled = true; $('results').hidden = false;
+  setDest(flight.d, animated); $('guess').disabled = $('go').disabled = true; $('results').hidden = false;
   setTimeout(showModal, animated ? 1600 : 0);
 }
 
@@ -154,11 +164,17 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
   flight = await pickFlight();
   const fk = flight.o + flight.d; // reset saved progress if the puzzle changed
   if (st.f !== fk) st = { day: todayStr, guesses: [], done: false, won: false, f: fk };
-  $('c-origin').textContent = label(flight.o); $('c-airline').textContent = flight.airline;
+  $('c-o-code').textContent = flight.o; $('c-o-city').textContent = AIRPORTS[flight.o][0]; $('c-airline').textContent = flight.airline;
+  $('c-no').textContent = '#' + puzzleNo; $('c-date').textContent = new Date().toUTCString().slice(5, 16);
   $('c-aircraft').textContent = flight.aircraft;
   $('c-time').textContent = '~' + fmtTime(flight.mins);
   st.guesses.forEach(g => addRow(g, false)); renderLeft();
   if (st.done) finish(false);
   $('go').onclick = submit; $('guess').onkeydown = e => e.key === 'Enter' && submit();
+  const seen = load('flightdle-seen', false), closeAbout = () => { $('about').hidden = true; save('flightdle-seen', true); };
+  $('info').onclick = () => $('about').hidden = false; $('about-close').onclick = closeAbout;
+  document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) { m.hidden = true; save('flightdle-seen', true); } }));
+  addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal').forEach(m => m.hidden = true); });
+  if (!seen && !st.guesses.length) $('about').hidden = false;
   $('share').onclick = share; $('close').onclick = () => $('modal').hidden = true; $('results').onclick = showModal;
 })();
