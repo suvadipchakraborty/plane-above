@@ -74,7 +74,7 @@
       throw new Error("HTTP " + res.status + (t ? ` (${t})` : ""));
     }
     const data = await res.json();
-    return (data.ac || [])
+    return (data.ac || data.aircraft || [])
       .filter((a) => typeof a.alt_baro === "number" && a.lat != null && a.lon != null)
       .map((a) => ({
         callsign: (a.flight || "").trim() || (a.r || a.hex || "").toUpperCase(),
@@ -91,6 +91,8 @@
     const steps = [
       ["proxy", () => fromAdsbLol(`/api/adsb?lat=${la}&lon=${lo}`)],
       ["adsb.lol", () => fromAdsbLol(`https://api.adsb.lol/v2/point/${la}/${lo}/50`)],
+      ["airplanes.live", () => fromAdsbLol(`https://api.airplanes.live/v2/point/${la}/${lo}/50`)],
+      ["adsb.fi", () => fromAdsbLol(`https://opendata.adsb.fi/api/v2/lat/${la}/lon/${lo}/dist/50`)],
       ["OpenSky", () => fromOpenSky(lat, lon)],
     ];
     for (const [name, fn] of steps) {
