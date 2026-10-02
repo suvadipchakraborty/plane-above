@@ -34,11 +34,11 @@
 
   // 1) fast network/Wi-Fi fix  2) high-accuracy GPS  3) approximate IP location (last resort)
   async function getPosition() {
-    try { return pick(await geo({ enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 })); }
+    try { return pick(await geo({ enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 })); }
     catch (e) {
       if (e.code === 1) throw e; // user blocked location: respect it
       status.textContent = "Trying GPS…";
-      try { return pick(await geo({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })); }
+      try { return pick(await geo({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })); }
       catch (e2) {
         if (e2.code === 1) throw e2;
         status.textContent = "Using approximate location…";
@@ -60,7 +60,7 @@
     const dLat = 1, dLon = 1 / Math.max(Math.cos(toRad(lat)), 0.05);
     const url = `https://opensky-network.org/api/states/all?lamin=${lat - dLat}&lomin=${lon - dLon}&lamax=${lat + dLat}&lomax=${lon + dLon}`;
     const res = await fetch(url, { signal: timeout(7000) });
-    if (!res.ok) throw new Error("api");
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     return (data.states || [])
       .filter((s) => !s[8] && s[5] != null && s[6] != null && (s[7] ?? s[13]) != null)
@@ -69,8 +69,7 @@
 
   async function fromAdsbLol(lat, lon) {
     const res = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/50`, { signal: timeout(10000) });
-    if (res.status === 429) throw new Error("rate");
-    if (!res.ok) throw new Error("api");
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     return (data.ac || [])
       .filter((a) => typeof a.alt_baro === "number" && a.lat != null && a.lon != null)
@@ -81,9 +80,13 @@
       }));
   }
 
+  const why = (e) => (e && e.name === "TimeoutError" ? "timed out" : e && /^HTTP/.test(e.message) ? e.message : "blocked or unreachable");
   async function getTraffic(lat, lon) {
-    try { return await fromOpenSky(lat, lon); }
-    catch (_) { status.textContent = "Switching radar feed…"; return await fromAdsbLol(lat, lon); }
+    let w1;
+    try { return await fromOpenSky(lat, lon); } catch (e) { w1 = why(e); }
+    status.textContent = "Switching radar feed…";
+    try { return await fromAdsbLol(lat, lon); }
+    catch (e) { const err = new Error("feeds"); err.detail = `OpenSky: ${w1}. adsb.lol: ${why(e)}.`; throw err; }
   }
 
   // Country of registration from the ICAO 24-bit address block
@@ -163,7 +166,7 @@
       : e.code === 3 ? "Location timed out. Move near a window or open sky, then scan again."
       : e.message === "rate" ? "OpenSky rate limit reached. Wait a minute and try again."
       : e.code === 0 ? "This browser doesn't support location. Try opening the app in Chrome or Safari."
-      : "Couldn't reach the OpenSky radar feed. Check your connection and try again.";
+      : `Couldn't reach the radar feeds. Turn off any VPN or ad blocker and try again.${e.detail ? `<br><small>${e.detail}</small>` : ""}`;
     status.textContent = "Scan failed";
     card.innerHTML = `<p class="empty">${msg}</p>`; card.hidden = false; $("shareBtn").hidden = true;
   }
