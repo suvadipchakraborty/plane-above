@@ -78,19 +78,18 @@
       .filter((a) => typeof a.alt_baro === "number" && a.lat != null && a.lon != null)
       .map((a) => ({
         callsign: (a.flight || "").trim() || (a.r || a.hex || "").toUpperCase(),
-        country: countryFromHex(a.hex), type: a.t || "",
+        country: a.country || countryFromHex(a.hex), type: a.t || "",
         alt: a.alt_baro * 0.3048, speed: (a.gs ?? 0) * 0.514444, lat: a.lat, lon: a.lon,
       }));
   }
 
   const why = (e) => (e && e.name === "TimeoutError" ? "timed out" : e && /^HTTP/.test(e.message) ? e.message : "blocked or unreachable");
-  // Order: own server proxy -> airplanes.live -> adsb.lol -> OpenSky
+  // Order: own server proxy (OpenSky signed-in, then adsb.lol) -> adsb.lol direct -> OpenSky anonymous
   async function getTraffic(lat, lon) {
     const fails = [];
     const la = lat.toFixed(3), lo = lon.toFixed(3);
     const steps = [
       ["proxy", () => fromAdsbLol(`/api/adsb?lat=${la}&lon=${lo}`)],
-      ["airplanes.live", () => fromAdsbLol(`https://api.airplanes.live/v2/point/${la}/${lo}/50`)],
       ["adsb.lol", () => fromAdsbLol(`https://api.adsb.lol/v2/point/${la}/${lo}/50`)],
       ["OpenSky", () => fromOpenSky(lat, lon)],
     ];
